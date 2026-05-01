@@ -448,15 +448,20 @@ export default function AppFinanzasFamiliares() {
   }
 
   async function loadOnlineData() {
-    if (!supabase) return;
+    if (!supabase) {
+      setSyncStatus("Falta configurar Supabase");
+      return;
+    }
 
-    const [{ data: expensesData, error: expensesError }, { data: paidData, error: paidError }] = await Promise.all([
-      supabase.from("family_expenses").select("*").eq("family_code", familyCode).order("created_at", { ascending: false }),
-      supabase.from("family_paid_marks").select("*").eq("family_code", familyCode),
-    ]);
+    const { data: expensesData, error: expensesError } = await supabase
+      .from("family_expenses")
+      .select("*")
+      .eq("family_code", familyCode)
+      .order("created_at", { ascending: false });
 
-    if (expensesError || paidError) {
-      setSyncStatus("Error de conexión");
+    if (expensesError) {
+      console.error("Error leyendo family_expenses:", expensesError);
+      setSyncStatus(`Error gastos: ${expensesError.message}`);
       return;
     }
 
@@ -472,11 +477,21 @@ export default function AppFinanzasFamiliares() {
       }))
     );
 
-    const paidMap = {};
-    (paidData || []).forEach((item) => {
-      paidMap[item.category_id] = item.is_paid;
-    });
-    setPaid(paidMap);
+    const { data: paidData, error: paidError } = await supabase
+      .from("family_paid_marks")
+      .select("*")
+      .eq("family_code", familyCode);
+
+    if (paidError) {
+      console.error("Error leyendo family_paid_marks:", paidError);
+      setSyncStatus(`Error marcas: ${paidError.message}`);
+    } else {
+      const paidMap = {};
+      (paidData || []).forEach((item) => {
+        paidMap[item.category_id] = item.is_paid;
+      });
+      setPaid(paidMap);
+    }
 
     const { data: archivesData, error: archivesError } = await supabase
       .from("family_monthly_archives")
@@ -484,7 +499,9 @@ export default function AppFinanzasFamiliares() {
       .eq("family_code", familyCode)
       .order("closed_at", { ascending: false });
 
-    if (!archivesError) {
+    if (archivesError) {
+      console.warn("Historial mensual no disponible todavía:", archivesError);
+    } else {
       setMonthlyHistory(
         (archivesData || []).map((item) => ({
           id: item.id,
@@ -501,6 +518,8 @@ export default function AppFinanzasFamiliares() {
         }))
       );
     }
+
+    setSyncStatus("Conectados");
   }
 
   function resetForm() {
