@@ -679,41 +679,63 @@ export default function AppFinanzasFamiliares() {
       categorySummary,
     };
 
+    // Primero guardamos el resumen en la app para no perderlo aunque falle Supabase.
     setMonthlyHistory((current) => [archive, ...current]);
 
+    // Limpiamos la vista actual para que el usuario pueda empezar el nuevo mes.
+    setExpenses([]);
+    setPaid({});
+    resetForm();
+
     if (onlineMode && supabase) {
-      const { error: archiveError } = await supabase.from("family_monthly_archives").insert({
-        id: archive.id,
-        family_code: archive.familyCode,
-        month_key: archive.monthKey,
-        month_name: archive.monthName,
-        closed_at: archive.closedAt,
-        total_income: archive.totalIncome,
-        total_budget: archive.totalBudget,
-        total_spent: archive.totalSpent,
-        remaining: archive.remaining,
-        expenses_count: archive.expensesCount,
-        category_summary: archive.categorySummary,
-      });
+      try {
+        const { error: archiveError } = await supabase.from("family_monthly_archives").insert({
+          id: archive.id,
+          family_code: archive.familyCode,
+          month_key: archive.monthKey,
+          month_name: archive.monthName,
+          closed_at: archive.closedAt,
+          total_income: archive.totalIncome,
+          total_budget: archive.totalBudget,
+          total_spent: archive.totalSpent,
+          remaining: archive.remaining,
+          expenses_count: archive.expensesCount,
+          category_summary: archive.categorySummary,
+        });
 
-      if (archiveError) {
-        console.warn("No se pudo guardar el historial en Supabase. Se guardó localmente.", archiveError);
-        setSyncStatus("Historial guardado local");
+        if (archiveError) {
+          console.error("Error guardando historial mensual:", archiveError);
+          setSyncStatus(`Error historial: ${archiveError.message}`);
+          return;
+        }
+
+        const { error: deleteExpensesError } = await supabase.from("family_expenses").delete().eq("family_code", familyCode);
+        if (deleteExpensesError) {
+          console.error("Error limpiando gastos del mes:", deleteExpensesError);
+          setSyncStatus(`Error limpiando gastos: ${deleteExpensesError.message}`);
+          return;
+        }
+
+        const { error: deletePaidError } = await supabase.from("family_paid_marks").delete().eq("family_code", familyCode);
+        if (deletePaidError) {
+          console.error("Error limpiando marcas del mes:", deletePaidError);
+          setSyncStatus(`Error limpiando marcas: ${deletePaidError.message}`);
+          return;
+        }
+
+        setSyncStatus("Mes cerrado online");
+        await loadOnlineData();
+      } catch (error) {
+        console.error("Error inesperado cerrando el mes:", error);
+        setSyncStatus(`Error inesperado: ${error.message}`);
       }
-
-      await supabase.from("family_expenses").delete().eq("family_code", familyCode);
-      await supabase.from("family_paid_marks").delete().eq("family_code", familyCode);
-      await loadOnlineData();
     } else {
       localStorage.removeItem("familia_expenses_v2");
       localStorage.removeItem("familia_paid_v2");
-      setExpenses([]);
-      setPaid({});
+      setSyncStatus("Mes cerrado local");
     }
 
-    resetForm();
-    setSyncStatus("Mes cerrado");
-    setTimeout(() => setSyncStatus(onlineMode ? "Conectados" : "Modo local"), 1200);
+    setTimeout(() => setSyncStatus(onlineMode ? "Conectados" : "Modo local"), 1800);
   };
 
   const copyCode = async () => {
