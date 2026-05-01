@@ -79,8 +79,16 @@ import { createClient } from "@supabase/supabase-js";
     for all using (true) with check (true);
 */
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "";
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
+function cleanSupabaseUrl(value = "") {
+  return value
+    .trim()
+    .replace(/\/+$/, "")
+    .replace(/\/rest\/v1$/i, "")
+    .replace(/\/rest\/v1\/rest\/v1$/i, "");
+}
+
+const supabaseUrl = cleanSupabaseUrl(import.meta.env.VITE_SUPABASE_URL || "");
+const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || "").trim();
 const supabase = supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
 
 const categories = [
@@ -724,7 +732,8 @@ export default function AppFinanzasFamiliares() {
         }
 
         setSyncStatus("Mes cerrado online");
-        await loadOnlineData();
+        // No recargamos aquí para evitar que una tabla secundaria bloquee el cierre del mes.
+        // El resumen ya quedó guardado y la vista actual ya fue limpiada.
       } catch (error) {
         console.error("Error inesperado cerrando el mes:", error);
         setSyncStatus(`Error inesperado: ${error.message}`);
