@@ -290,6 +290,7 @@ function classNames(...items) {
 export default function AppFinanzasFamiliares() {
   const [expenses, setExpenses] = useState([]);
   const [paid, setPaid] = useState({});
+  const [monthlyHistory, setMonthlyHistory] = useState([]);
   const [familyCode, setFamilyCode] = useState(getStoredFamilyCode());
   const [onlineMode, setOnlineMode] = useState(false);
   const [syncStatus, setSyncStatus] = useState("Modo local");
@@ -379,8 +380,9 @@ export default function AppFinanzasFamiliares() {
     if (!onlineMode) {
       localStorage.setItem("familia_expenses_v2", JSON.stringify(expenses));
       localStorage.setItem("familia_paid_v2", JSON.stringify(paid));
+      localStorage.setItem("familia_monthly_history_v2", JSON.stringify(monthlyHistory));
     }
-  }, [expenses, paid, onlineMode]);
+  }, [expenses, paid, monthlyHistory, onlineMode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -436,8 +438,10 @@ export default function AppFinanzasFamiliares() {
       const savedPaidV2 = localStorage.getItem("familia_paid_v2");
       const savedExpensesV1 = localStorage.getItem("familia_expenses_v1");
       const savedPaidV1 = localStorage.getItem("familia_paid_v1");
+      const savedHistory = localStorage.getItem("familia_monthly_history_v2");
       if (savedExpensesV2 || savedExpensesV1) setExpenses(JSON.parse(savedExpensesV2 || savedExpensesV1));
       if (savedPaidV2 || savedPaidV1) setPaid(JSON.parse(savedPaidV2 || savedPaidV1));
+      if (savedHistory) setMonthlyHistory(JSON.parse(savedHistory));
     } catch (error) {
       console.warn("No se pudo cargar el presupuesto guardado", error);
     }
@@ -473,6 +477,30 @@ export default function AppFinanzasFamiliares() {
       paidMap[item.category_id] = item.is_paid;
     });
     setPaid(paidMap);
+
+    const { data: archivesData, error: archivesError } = await supabase
+      .from("family_monthly_archives")
+      .select("*")
+      .eq("family_code", familyCode)
+      .order("closed_at", { ascending: false });
+
+    if (!archivesError) {
+      setMonthlyHistory(
+        (archivesData || []).map((item) => ({
+          id: item.id,
+          familyCode: item.family_code,
+          monthKey: item.month_key,
+          monthName: item.month_name,
+          closedAt: item.closed_at,
+          totalIncome: Number(item.total_income || 0),
+          totalBudget: Number(item.total_budget || 0),
+          totalSpent: Number(item.total_spent || 0),
+          remaining: Number(item.remaining || 0),
+          expensesCount: Number(item.expenses_count || 0),
+          categorySummary: item.category_summary || [],
+        }))
+      );
+    }
   }
 
   function resetForm() {
@@ -510,7 +538,16 @@ export default function AppFinanzasFamiliares() {
 
   const saveExpense = async () => {
     const amount = Number(form.amount);
-    if (!form.description.trim() || !amount || amount <= 0) return;
+
+    if (!form.description.trim()) {
+      setSyncStatus("Escribe una descripción");
+      return;
+    }
+
+    if (!amount || amount <= 0) {
+      setSyncStatus("Escribe un importe válido");
+      return;
+    }
 
     const payload = {
       id: editingId || crypto.randomUUID(),
@@ -518,8 +555,14 @@ export default function AppFinanzasFamiliares() {
       amount,
       categoryId: form.categoryId,
       person: form.person,
-      date: form.date,
+      date: form.date || getToday(),
       createdAt: editingId ? expenses.find((item) => item.id === editingId)?.createdAt || new Date().toISOString() : new Date().toISOString(),
+    };
+
+    const saveLocal = () => {
+      setExpenses((current) => (editingId ? current.map((item) => (item.id === editingId ? payload : item)) : [payload, ...current]));
+      setSyncStatus(editingId ? "Gasto actualizado" : "Gasto añadido");
+      setTimeout(() => setSyncStatus(onlineMode ? "Conectados" : "Modo local"), 1200);
     };
 
     if (onlineMode && supabase) {
@@ -539,11 +582,15 @@ export default function AppFinanzasFamiliares() {
         : await supabase.from("family_expenses").insert(record);
 
       if (error) {
-        setSyncStatus("No se pudo guardar");
-        return;
+        console.error("Error guardando en Supabase:", error);
+        setSyncStatus("Error Supabase: guardado local");
+        saveLocal();
+      } else {
+        setSyncStatus(editingId ? "Gasto actualizado" : "Gasto añadido");
+        await loadOnlineData();
       }
     } else {
-      setExpenses((current) => (editingId ? current.map((item) => (item.id === editingId ? payload : item)) : [payload, ...current]));
+      saveLocal();
     }
 
     resetForm();
@@ -582,9 +629,59 @@ export default function AppFinanzasFamiliares() {
   };
 
   const resetMonth = async () => {
-    if (!window.confirm("¿Seguro que quieres empezar un nuevo mes? Se borrarán gastos y marcas pagadas.")) return;
+    if (!window.confirm("¿Quieres cerrar este mes, guardar el resumen y empezar un mes nuevo?")) return;
+
+    const now = new Date();
+    const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const monthName = now.toLocaleDateString("es-ES", { month: "long", year: "numeric" });
+    const categorySummary = categories.map((category) => {
+      const spent = spentByCategory[category.id] || 0;
+      return {
+        id: category.id,
+        name: category.name,
+        budget: category.budget,
+        spent,
+        remaining: category.budget - spent,
+        paid: !!paid[category.id],
+      };
+    });
+
+    const archive = {
+      id: crypto.randomUUID(),
+      familyCode,
+      monthKey,
+      monthName,
+      closedAt: now.toISOString(),
+      totalIncome,
+      totalBudget,
+      totalSpent,
+      remaining: totalBudget - totalSpent,
+      expensesCount: expenses.length,
+      categorySummary,
+    };
+
+    setMonthlyHistory((current) => [archive, ...current]);
 
     if (onlineMode && supabase) {
+      const { error: archiveError } = await supabase.from("family_monthly_archives").insert({
+        id: archive.id,
+        family_code: archive.familyCode,
+        month_key: archive.monthKey,
+        month_name: archive.monthName,
+        closed_at: archive.closedAt,
+        total_income: archive.totalIncome,
+        total_budget: archive.totalBudget,
+        total_spent: archive.totalSpent,
+        remaining: archive.remaining,
+        expenses_count: archive.expensesCount,
+        category_summary: archive.categorySummary,
+      });
+
+      if (archiveError) {
+        console.warn("No se pudo guardar el historial en Supabase. Se guardó localmente.", archiveError);
+        setSyncStatus("Historial guardado local");
+      }
+
       await supabase.from("family_expenses").delete().eq("family_code", familyCode);
       await supabase.from("family_paid_marks").delete().eq("family_code", familyCode);
       await loadOnlineData();
@@ -594,7 +691,10 @@ export default function AppFinanzasFamiliares() {
       setExpenses([]);
       setPaid({});
     }
+
     resetForm();
+    setSyncStatus("Mes cerrado");
+    setTimeout(() => setSyncStatus(onlineMode ? "Conectados" : "Modo local"), 1200);
   };
 
   const copyCode = async () => {
@@ -692,6 +792,7 @@ export default function AppFinanzasFamiliares() {
                 syncStatus={syncStatus}
                 copyCode={copyCode}
                 resetMonth={resetMonth}
+                monthlyHistory={monthlyHistory}
               />
             )}
           </main>
@@ -1070,7 +1171,7 @@ function WeekView({ weeklyBudget, weeklySpent, weeklyRemaining, weeklyExpenses, 
   );
 }
 
-function SettingsView({ totalIncome, totalBudget, familyCode, setFamilyCode, onlineMode, setOnlineMode, syncStatus, copyCode, resetMonth }) {
+function SettingsView({ totalIncome, totalBudget, familyCode, setFamilyCode, onlineMode, setOnlineMode, syncStatus, copyCode, resetMonth, monthlyHistory }) {
   return (
     <div className="grid gap-6 xl:grid-cols-2">
       <Card className="rounded-[1.75rem] border-0 bg-white/85 shadow-xl shadow-slate-200/70 backdrop-blur">
@@ -1101,7 +1202,7 @@ function SettingsView({ totalIncome, totalBudget, familyCode, setFamilyCode, onl
             </div>
 
             <Button onClick={resetMonth} variant="outline" className="w-full rounded-2xl py-6 font-black">
-              <RotateCcw className="mr-2 h-4 w-4" /> Empezar nuevo mes
+              <RotateCcw className="mr-2 h-4 w-4" /> Cerrar mes y empezar nuevo
             </Button>
           </div>
         </CardContent>
@@ -1128,6 +1229,33 @@ function SettingsView({ totalIncome, totalBudget, familyCode, setFamilyCode, onl
           <div className="mt-5 rounded-3xl bg-amber-50 p-4 ring-1 ring-amber-100">
             <p className="font-black text-amber-800">Presupuesto mensual: {currency.format(totalBudget)}</p>
             <p className="mt-1 text-sm text-amber-700">Todo está asignado. No sobra sin destino: cada euro tiene una misión.</p>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="rounded-[1.75rem] border-0 bg-white/85 shadow-xl shadow-slate-200/70 backdrop-blur xl:col-span-2">
+        <CardContent className="p-5">
+          <h2 className="text-2xl font-black">Historial mensual</h2>
+          <p className="mt-1 text-sm text-slate-500">Cada vez que cerréis el mes, se guarda un resumen aquí.</p>
+
+          <div className="mt-5 space-y-3">
+            {monthlyHistory.length === 0 ? (
+              <div className="rounded-3xl bg-slate-50 p-6 text-center text-sm font-medium text-slate-500 ring-1 ring-slate-100">
+                Todavía no hay meses cerrados.
+              </div>
+            ) : (
+              monthlyHistory.map((month) => (
+                <div key={month.id} className="grid gap-3 rounded-3xl bg-slate-50 p-4 ring-1 ring-slate-100 md:grid-cols-5 md:items-center">
+                  <div className="md:col-span-2">
+                    <p className="font-black capitalize">{month.monthName}</p>
+                    <p className="text-xs text-slate-500">{month.expensesCount} movimientos · cerrado el {new Date(month.closedAt).toLocaleDateString("es-ES")}</p>
+                  </div>
+                  <MiniMetric label="Ingresos" value={currency.format(month.totalIncome)} />
+                  <MiniMetric label="Gastado" value={currency.format(month.totalSpent)} />
+                  <MiniMetric label="Resultado" value={currency.format(month.remaining)} danger={month.remaining < 0} />
+                </div>
+              ))
+            )}
           </div>
         </CardContent>
       </Card>
