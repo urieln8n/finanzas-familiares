@@ -1,4 +1,3 @@
-$json = @'
 {
   "name": "Finanzas con Paz",
   "short_name": "Finanzas Paz",
@@ -24,7 +23,3 @@ $json = @'
     }
   ]
 }
-'@
-
-$utf8NoBom = New-Object System.Text.UTF8Encoding $false
-[System.IO.File]::WriteAllText("public\manifest.webmanifest", $json, $utf8NoBom)
