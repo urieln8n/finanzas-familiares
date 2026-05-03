@@ -1,48 +1,71 @@
-# Finanzas con Paz — Reglas para Claude Code
+# Finanzas con Paz — Instrucciones globales para Claude Code
 
-## Contexto del proyecto
-Finanzas con Paz es una app React + Vite + Tailwind + Supabase + Vercel para presupuesto familiar.
+## Producto
 
-Objetivo actual:
-Convertir la app en una app profesional y estable, trabajando por fases pequeñas para no romper producción ni gastar toda la cuota de Claude Pro.
+Finanzas con Paz es una app familiar para que parejas y familias organicen el dinero del hogar con fe, orden y paz.
 
-## Reglas obligatorias
-- No leer todo el proyecto si no es necesario.
-- No hacer auditorías completas salvo que se pidan.
-- Preguntar antes de abrir muchos archivos.
-- No modificar más de 2 o 3 archivos por tarea sin aprobación.
-- No tocar Supabase, Auth, Vercel o variables de entorno si la tarea no lo requiere.
-- No cambiar VITE_SUPABASE_URL.
-- No cambiar VITE_SUPABASE_ANON_KEY.
-- No usar service_role key en frontend.
-- No borrar funcionalidades existentes.
-- No romper producción.
+## Objetivo actual
 
-## Funciones que deben seguir funcionando
+Convertir la app actual en un SaaS profesional vendible por 9,99 €/mes, sin romper producción.
+
+## Stack actual
+
+- React + Vite.
+- Tailwind CSS.
+- shadcn/ui.
+- Supabase.
+- Supabase Auth.
+- Vercel.
+
+## Principios obligatorios
+
+1. Trabajar en modo ahorro.
+2. Una tarea por vez.
+3. Antes de editar, explicar plan y archivos que se tocarán.
+4. No leer todo el proyecto salvo que el usuario lo apruebe.
+5. No modificar más de 2-3 archivos por tarea sin aprobación.
+6. No instalar dependencias sin permiso.
+7. No cambiar variables de entorno sin avisar.
+8. No usar service_role key en frontend.
+9. No romper producción.
+10. Después de cada cambio indicar cómo probar.
+
+## Funciones existentes que no se deben romper
+
 - Registro de gastos.
 - Modo conectado con Supabase.
 - Código familiar.
 - Cierre mensual.
 - Historial mensual.
 - Presupuesto familiar.
-- Diseño mobile-first.
+- UI mobile-first.
 
-## Comandos del proyecto
-npm run dev
-npm run build
+## Variables de entorno actuales
 
-## Estilo del producto
-- Nombre: Finanzas con Paz.
-- Enfoque: parejas, familias, fe, orden y paz financiera.
-- UI moderna, limpia, premium y fácil de usar.
-- Precio futuro objetivo: 9,99 €/mes.
+- VITE_SUPABASE_URL
+- VITE_SUPABASE_ANON_KEY
+- VITE_DISABLE_LOGIN opcional para desarrollo.
 
-## Forma correcta de trabajar
-Claude debe trabajar siempre por tareas pequeñas.
+## Fases SaaS
 
-Después de cada cambio debe decir:
-1. Archivos modificados.
-2. Qué cambió.
-3. Cómo probar.
-4. Comando recomendado.
-5. Commit recomendado.
+1. Estabilizar app actual.
+2. Refactor profesional.
+3. UI/UX premium.
+4. Auth profesional.
+5. Multi-tenant por familias.
+6. RLS seguro.
+7. Presupuesto editable.
+8. Stripe Billing.
+9. Paywall.
+10. Landing.
+11. Onboarding.
+12. Lanzamiento beta.
+
+## No construir todavía sin aprobación
+
+- Stripe.
+- Multi-tenant completo.
+- Migraciones destructivas.
+- Roles complejos.
+- App móvil nativa.
+- IA avanzada.
