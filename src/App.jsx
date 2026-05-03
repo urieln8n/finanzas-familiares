@@ -3,6 +3,7 @@ import { Check, AlertTriangle } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { getToday, getStoredFamilyCode, getWeekRange, dateInRange, percentage } from "@/lib/helpers";
 import { categories, incomeSources } from "@/data/budget";
+import { useAuth } from "@/hooks/useAuth";
 import AuthScreen, { LoadingScreen } from "@/components/AuthScreen";
 import Hero from "@/components/Hero";
 import { DesktopNav, MobileTabs } from "@/components/Navigation";
@@ -13,21 +14,11 @@ import MovementsView from "@/views/MovementsView";
 import WeekView from "@/views/WeekView";
 import SettingsView from "@/views/SettingsView";
 
-// DEV ONLY — bypass temporal de login. Activar con VITE_DISABLE_LOGIN=true en .env.local
-const DEV_BYPASS = import.meta.env.VITE_DISABLE_LOGIN === "true";
-
 export default function AppFinanzasFamiliares() {
+  const { session, authLoading, authMode, setAuthMode, authForm, setAuthForm, authMessage, handleAuthSubmit, handleSignOut } = useAuth();
   const [expenses, setExpenses] = useState([]);
   const [paid, setPaid] = useState({});
   const [monthlyHistory, setMonthlyHistory] = useState([]);
-  // DEV: si bypass activo, sesión falsa para entrar directo al dashboard
-  const [session, setSession] = useState(
-    DEV_BYPASS ? { user: { email: "Modo privado — sin login" } } : null
-  );
-  const [authLoading, setAuthLoading] = useState(DEV_BYPASS ? false : true);
-  const [authMode, setAuthMode] = useState("signin");
-  const [authForm, setAuthForm] = useState({ email: "", password: "" });
-  const [authMessage, setAuthMessage] = useState("");
   const [familyCode, setFamilyCode] = useState(getStoredFamilyCode());
   const [onlineMode, setOnlineMode] = useState(false);
   const [syncStatus, setSyncStatus] = useState("Modo local");
@@ -126,38 +117,6 @@ export default function AppFinanzasFamiliares() {
 
   // Limpia el timer al desmontar para evitar memory leaks
   useEffect(() => () => clearTimeout(notifyTimer.current), []);
-
-  useEffect(() => {
-    if (DEV_BYPASS) return; // DEV: bypass activo, no iniciar Supabase Auth
-
-    if (!supabase) {
-      setAuthLoading(false);
-      setAuthMessage("Falta configurar Supabase");
-      return;
-    }
-
-    let mounted = true;
-
-    async function initAuth() {
-      const { data, error } = await supabase.auth.getSession();
-      if (!mounted) return;
-      if (error) setAuthMessage(error.message);
-      setSession(data?.session || null);
-      setAuthLoading(false);
-    }
-
-    initAuth();
-
-    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      setSession(nextSession);
-      setAuthLoading(false);
-    });
-
-    return () => {
-      mounted = false;
-      data?.subscription?.unsubscribe();
-    };
-  }, []);
 
   useEffect(() => {
     localStorage.setItem("family_code_v2", familyCode);
@@ -596,56 +555,6 @@ export default function AppFinanzasFamiliares() {
     } catch (_) {
       notify("No se pudo copiar el código. Cópialo manualmente.", "warning");
     }
-  };
-
-  const handleAuthSubmit = async (event) => {
-    event?.preventDefault();
-    setAuthMessage("");
-
-    if (!supabase) {
-      setAuthMessage("Falta configurar Supabase.");
-      return;
-    }
-
-    const email = authForm.email.trim();
-    const password = authForm.password;
-
-    if (!email || !password) {
-      setAuthMessage("Escribe email y contraseña.");
-      return;
-    }
-
-    if (password.length < 6) {
-      setAuthMessage("La contraseña debe tener al menos 6 caracteres.");
-      return;
-    }
-
-    setAuthLoading(true);
-
-    const response =
-      authMode === "signin"
-        ? await supabase.auth.signInWithPassword({ email, password })
-        : await supabase.auth.signUp({ email, password });
-
-    setAuthLoading(false);
-
-    if (response.error) {
-      setAuthMessage(response.error.message);
-      return;
-    }
-
-    if (authMode === "signup" && !response.data.session) {
-      setAuthMessage("Cuenta creada. Revisa tu correo para confirmar el acceso.");
-      return;
-    }
-
-    setSession(response.data.session || null);
-  };
-
-  const handleSignOut = async () => {
-    if (supabase) await supabase.auth.signOut();
-    setSession(null);
-    setAuthMessage("");
   };
 
   if (authLoading) return <LoadingScreen />;
